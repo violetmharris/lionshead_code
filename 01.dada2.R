@@ -3,7 +3,7 @@
 # Violet Harris / OSU / Kiser Lab / 2026
 # 6.15.26
 
-# This code uses cutadapt to remove primers. 
+# This code uses cutadapt to remove primers and dada2 to process ITS reads.
 
 # Code based on: 
 # Abbey Neat (adapted from Geoffry Zahn): https://github.com/aneat/hja_fungi_manuscript/blob/main/code/01.remove_primers.R
@@ -12,7 +12,6 @@
 
 
 # LOAD PACKAGES
-library(here)
 library(tidyverse)
 library(purrr)
 library(Biostrings)
@@ -20,6 +19,10 @@ library(ShortRead)
 library(vegan)
 library(reticulate)
 library(dada2)
+
+# the cutadapt tool is downloaded using python and miniconda, and both must be installed first if they are
+# not already on the machine. Check online tutorials.
+
 
 
 ### PARSE FILE PATHS (name and sort forward/reverse reads) ####
@@ -79,6 +82,73 @@ rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.filtN[[1]]),
 
 
 ### Run cutadapt ###
+cutadapt <- "C:/Users/harrivio/AppData/Local/Python/pythoncore-3.14-64/Scripts/cutadapt" 
+system2(cutadapt, args = "--version") # Run shell commands from R
+path.cut <- file.path(path, "cutadapt")
+
+if(!dir.exists(path.cut)) dir.create(path.cut)
+fnFs.cut <- file.path(path.cut, basename(fnFs))
+fnRs.cut <- file.path(path.cut, basename(fnRs))
+
+
+FWD.RC <- dada2:::rc(FWD)
+REV.RC <- dada2:::rc(REV)
+
+# Trim FWD and the reverse-complement of REV off of R1 (forward reads)
+R1.flags <- paste("-g", FWD, "-a", REV.RC)
+# Trim REV and the reverse-complement of FWD off of R2 (reverse reads)
+R2.flags <- paste("-G", REV, "-A", FWD.RC)
+
+# Run cutadapt to remove the primers from your sequence
+for(i in seq_along(fnFs)) {
+  system2(cutadapt, args = c(R1.flags, R2.flags, "-n", 2, # -n 2 required to remove FWD and REV from reads
+                             "-o", fnFs.cut[i], "-p", fnRs.cut[i], # output files
+                             fnFs.filtN[i], fnRs.filtN[i])) # input files
+}
+
+# Lots of output in the console is normal here while cutadapt is running.
+
+# Sanity check: should return with 0 occurrences in any orientation. Check comes up with a few for my data, but not enough to worry about in the grand scheme.
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.cut[[1]]), 
+      FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = fnRs.cut[[1]]), 
+      REV.ForwardReads = sapply(REV.orients, primerHits, fn = fnFs.cut[[1]]), 
+      REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs.cut[[1]]))
+
+
+
+### Primer removal done. On to DADA2 for processing the raw ITS reads: ###
+
+# Tell DADA2 which reads are forward and reverse
+# This is to check the pattern, ours is diff than the documentation:
+list.files(path.cut) 
+
+cutFs <- sort(list.files(path.cut, pattern = "_R1_001.fastq.gz", full.names = TRUE))
+cutRs <- sort(list.files(path.cut, pattern = "_R2_001.fastq.gz", full.names = TRUE))
+
+# Extract sample names
+get.sample.name <- function(fname) strsplit(basename(fname), "_")[[1]][1]
+sample.names <- unname(sapply(cutFs, get.sample.name))
+head(sample.names) # Check that just the base name remains
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

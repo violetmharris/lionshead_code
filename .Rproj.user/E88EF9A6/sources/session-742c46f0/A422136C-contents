@@ -1,0 +1,553 @@
+#Community Analysis of Soil Fungi // based on KH Decay Fungi CA, edits VMH
+
+#This uses the DADA2 pipeline to process metabarcoding results, then produces 
+#files to be used for downstream analysis. DADA2 documentation is excellent on
+#github, follow along with it for examples etc.https://benjjneb.github.io/dada2/tutorial.html
+#VMH: link to the ITS specific workflow: https://benjjneb.github.io/dada2/ITS_workflow.html
+
+###########Set up work############
+# set working directory
+setwd("C:/Users/harrivio/DADA2_Thesis")
+getwd()
+
+#Make sure there are no spaces or weird characters in file names
+
+#Have devtools, BiocManager (dada2,dplyr, readxl, tidyverse, Biostrings),
+#ShortRead, reticulate, and vegan installed:
+
+install.packages("BiocManager")
+install.packages("devtools")
+
+#VMH: if it says BiocManager is not available in CRAN, have to use different installation method:
+ # if (!require("BiocManager", quietly = TRUE)) {
+ #  install.packages("BiocManager")
+ # }
+#BiocManager::install(version = "3.22")
+# BiocManager::install("ShortRead", lib = "C:/Users/harrivio/DADA2_Thesis/PackagesTools")
+# a
+
+#provides destinations in home and system folders
+.libPaths()
+# fixing paths not writeable #VMH: change package names to those that pop up in error msg
+#BiocManager::install(c("boot", "lattice", "Matrix", "mgcv", "survival"), lib = "C:/Users/harrivio/DADA2_Thesis/PackagesTools")
+
+
+# remove the , ask = FALSE when installing for the first time 
+# the (,ask = FALSE) at end of install prevents r from asking if you want to update 
+# the package every time you run the script
+###VMH: using a custom folder like KH did to install these packages caused a ton of issues. I went
+#back and re-did the whole thing without custom folder.
+BiocManager::install("dada2", ask = FALSE)
+BiocManager::install("dplyr", ask = FALSE)
+BiocManager::install("readxl", ask = FALSE)
+BiocManager::install("tidyverse", ask = FALSE)
+BiocManager::install("Biostrings", ask = FALSE)
+
+BiocManager::install("ShortRead" , ask = FALSE)
+BiocManager::install("reticulate", ask = FALSE)
+install.packages("vegan", ask = FALSE)
+
+'
+# remove apostraphies above and below to check if you can load all of these packages
+library("usethis")
+library("devtools")
+library("BiocManager")
+  library("dada2")
+  library("dplyr")
+  library("readxl")
+  library("tidyverse")
+  library("Biostrings")
+library("ShortRead")
+library("reticulate")
+library("vegan")
+library("reticulate")
+'
+
+#Download needed programs to your computer w/ known locations to run shell commands
+
+#Get a python language, suggestion here is miniconda. You can straight up
+#download it, or alternately command "py_config()" which will prompt R to suggest
+#downloading it for you. 
+
+#You also need to download c++ tools (https://visualstudio.microsoft.com/downloads/) 
+#so R and miniconda will get along.
+
+#Tell R where to find your python.I needed to restart my computer to get this to play nicely.
+#library("reticulate")
+
+# use_python("C:/Users/harrivio/AppData/Local/R/cache/R/reticulate/uv/cache/archive-v0/aO1YLHaVSTrHLzuK80F6g/Scripts/python.exe")
+# py_config()
+
+#then install program cutadapt 
+#py_install("cutadapt")
+
+###VMH: ADDED THIS CHUNK DUE TO A WARNING MESSAGE
+
+Sys.setenv(RETICULATE_PYTHON =
+             "C:/Users/harrivio/AppData/Local/R/cache/R/reticulate/uv/python/cpython-3.12.12-windows-x86_64-none/python.exe"
+)
+library(reticulate)
+py_config()
+
+py <- reticulate::py_exe()
+
+# Ensure pip is present and up-to-date
+system2(py, c("-m", "ensurepip", "--upgrade"), stdout = TRUE, stderr = TRUE)
+system2(py, c("-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"),
+        stdout = TRUE, stderr = TRUE)
+
+# Verify
+system2(py, c("-m", "pip", "--version"), stdout = TRUE, stderr = TRUE)
+
+system2(py, c("-m", "pip", "install", "--upgrade", "cutadapt"),
+        stdout = TRUE, stderr = TRUE)
+
+# Verify cutadapt is runnable
+system2(py, c("-m", "cutadapt", "--version"), stdout = TRUE, stderr = TRUE)
+
+#name cutadapt for use in step 6
+cutadapt <- reticulate::py_exe()
+
+# #Identify where cutadapt has been installed  
+# reticulate::py_run_string("import cutadapt, os; print(os.path.dirname(cutadapt.__file__))")
+# #and assign it a name to use in step 6.
+# cutadapt <- "C:/Users/harrivio/AppData/Local/R/cache/R/reticulate/uv/cache/archive-v0/vj99tVqEihH4TsF_JKZ0U/Lib/site-packages/cutadapt" 
+
+#Download the UNITE database for fungal ID. I used the sh_general_release_dynamic_10.05.2021.fasta
+# link to UNITE, https://unite.ut.ee/repository.php
+# VMH: use the most up to date UNITE database release.
+
+###########Run the DADA2 analysis############
+
+#1. Load all the packages/programs we will be using
+
+#a. load the R stuff
+
+library(devtools)
+library(dada2)
+library(ShortRead)
+library(Biostrings)
+library(vegan)
+library(reticulate)
+
+#b. Tell R how to connect to python
+#VMH: this way of connecting to python didn't work for me. solved in step 6
+# use_python("C:/Users/harrivio/AppData/Local/R/cache/R/reticulate/uv/cache/archive-v0/vj99tVqEihH4TsF_JKZ0U/Scripts/python.exe")
+# cutadapt <- "D:/hillk3/Downloads/Rthesis/.virtualenvs/r-reticulate/Scripts/cutadapt"
+# system2(cutadapt, args = "--version")
+
+#2. Define initial file locations and primers used
+path <- "C:/Users/harrivio/DADA2_Thesis/JustSequences"
+# finds and sorts all fastq files in path
+fnFs <- sort(list.files(path, pattern = "_R1_001.fastq", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern = "_R2_001.fastq", full.names = TRUE))
+# Check results
+print(fnFs)
+print(fnRs)
+FWD <- "GTGAATCATCRAATYTTTG"
+REV <- "TCCTCCGCTTATTGATATGC"
+
+
+#3. Check if the primers orientation is correct for DADA2
+# This function creates all orientations of the input sequence
+#The Biostrings here works w/ DNAString objects rather than character vectors
+#so it needed to get converted
+allOrients <- function(primer) {
+  require(Biostrings)
+  dna <- DNAString(primer) 
+  orients <- c(Forward = dna, Complement = complement(dna), Reverse = reverse(dna), 
+               RevComp = reverseComplement(dna))
+  return(sapply(orients, toString))  # Converts back to character vector
+}
+
+
+FWD.orients <- allOrients(FWD)
+REV.orients <- allOrients(REV)
+FWD.orients
+
+
+#4. Kick out everything that has a N instead of a base
+
+#Set up to A called "filtN" in the existing path location you've given R,
+#with the bases called out for the forward and reverse file
+fnFs.filtN <- file.path(path, "filtN", basename(fnFs)) 
+fnRs.filtN <- file.path(path, "filtN", basename(fnRs))
+
+#Actually kick out the Ns. the maxN means that anything with over 0 Ns
+# will be kicked out, the multithread has to do with processing power used
+filterAndTrim(fnFs, fnFs.filtN, fnRs, fnRs.filtN, maxN = 0, multithread = FALSE)
+
+
+#5. Double check that the primers are correctly oriented once the Ns are gone
+
+#Function counts the number of reads where the primer is found, matching the 
+#primers against the contents of the fastq files.
+
+# Counts number of reads in which the primer is found
+primerHits <- function(primer, fn) {
+  nhits <- vcountPattern(primer, sread(readFastq(fn)), fixed = FALSE)
+  return(sum(nhits > 0))
+}
+
+#Checks the counts for the first N-filtered fastq file pair, you can see if 
+#everything is properly aligned. See documentation for comparison (#VMH:ITS workflow doc)
+
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.filtN[[1]]), 
+      FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = fnRs.filtN[[1]]), 
+      REV.ForwardReads = sapply(REV.orients, primerHits, fn = fnFs.filtN[[1]]), 
+      REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs.filtN[[1]]))
+
+
+#6 Remove the primers w/ cutadapt
+
+#Tell it where cutadapt is
+path.cut <- file.path(path, "cutadapt")
+
+if(!dir.exists(path.cut)) dir.create(path.cut)
+fnFs.cut <- file.path(path.cut, basename(fnFs))
+fnRs.cut <- file.path(path.cut, basename(fnRs))
+
+
+#Run it
+FWD.RC <- dada2:::rc(FWD)
+REV.RC <- dada2:::rc(REV)
+# Trim FWD and the reverse-complement of REV off of R1 (forward reads)
+R1.flags <- paste("-g", FWD, "-a", REV.RC)
+# Trim REV and the reverse-complement of FWD off of R2 (reverse reads)
+R2.flags <- paste("-G", REV, "-A", FWD.RC)
+
+
+# Run Cutadapt
+##VMH: this chunk is KH's code from documentation, but I had issues getting python and 
+#cutadapt to play nice.
+# for(i in seq_along(fnFs)) {
+#   system2(cutadapt, args = c(R1.flags, R2.flags, "-n", 2, # -n 2 required to remove FWD and REV from reads
+#                              "-o", fnFs.cut[i], "-p", fnRs.cut[i], # output files
+#                              "-m", 1, #discard reads shorter than length = 1
+#                              fnFs.filtN[i], fnRs.filtN[i])) # input files
+# }
+
+###VMH version:
+# Make sure your output directory exists
+if (!dir.exists(path.cut)) dir.create(path.cut, recursive = TRUE)
+
+# Process one pair first to confirm
+out <- system2(cutadapt,
+               args = c("-m", "cutadapt",             # <-- This is the key part
+                        R1.flags, R2.flags,
+                        "-n", "2",                     # remove both primers if present
+                        "-o", fnFs.cut[1], "-p", fnRs.cut[1],
+                        "-m", "1",                     # discard reads shorter than 1
+                        fnFs.filtN[1], fnRs.filtN[1]),
+               stdout = TRUE, stderr = TRUE)
+cat(paste(out, collapse = "\n"))
+
+#if that worked, run the whole thing:
+for (i in seq_along(fnFs)) {
+  system2(cutadapt,
+          args = c("-m", "cutadapt",
+                   R1.flags, R2.flags,
+                   "-n", "2",
+                   "-o", fnFs.cut[i], "-p", fnRs.cut[i],
+                   "-m", "1",
+                   fnFs.filtN[i], fnRs.filtN[i]),
+          stdout = TRUE, stderr = TRUE)
+}
+#Check that it worked:
+#cut files should return as non-zero and smaller than original filtered files
+head(file.info(fnFs.cut)$size)
+head(file.info(fnFs)$size)
+head(file.info(fnRs.cut)$size)
+head(file.info(fnRs)$size)
+###END VMH chunk
+
+#Note that this deviates from the dada2 documentation by the inclusion of the
+#minimum read length, otherwise there are issues w/ QC plotting for me
+
+#7 Check that you actually got the primers off w/ the first file
+
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.cut[[1]]), 
+      FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = fnRs.cut[[1]]), 
+      REV.ForwardReads = sapply(REV.orients, primerHits, fn = fnFs.cut[[1]]), 
+      REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs.cut[[1]]))
+###VMH: one primer count still seems high (337). moving on for now but may have
+#to come back to this.
+
+#8 Match forward and reverse fastq files w/ their names
+
+# Tell DADA2 which reads are forward and reverse
+#check the pattern is right, ours is diff than the documentation:
+#list.files(path.cut) #(VMH)you should see pattern matching below at end of file names.
+cutFs <- sort(list.files(path.cut, pattern = "_R1_001.fastq.gz", full.names = TRUE))
+cutRs <- sort(list.files(path.cut, pattern = "_R2_001.fastq.gz", full.names = TRUE))
+
+# Extract sample names, assuming filenames have format:
+get.sample.name <- function(fname) strsplit(basename(fname), "_")[[1]][1]
+sample.names <- unname(sapply(cutFs, get.sample.name))
+head(sample.names)
+
+
+#9 Inspect read quality profiles. Look at documentation for details
+
+library(BiocParallel)
+register(SerialParam()) ###VMH: I added these lines due to error message when plotting
+
+plotQualityProfile(cutFs[1:2])
+plotQualityProfile(cutRs[1:2])
+
+
+#10 Filter and trim reads
+
+filtFs <- file.path(path.cut, "filtered", basename(cutFs))
+filtRs <- file.path(path.cut, "filtered", basename(cutRs))
+
+#Use standard filtering parameters here, so maxN=0 (needed for dada2)
+#truncQ=2, rm.phix=TRUE, and maxEE=2 to set "expected errors" which is better
+#than just using quality score.enforcing minLen here to get rid of spurious nonsense
+###VMH: kept KH's maxEE setting, which is c(2,6), since reverse reads are lower quality than forward.
+out <- filterAndTrim(cutFs, filtFs, cutRs, filtRs, maxN = 0, maxEE = c(2, 6), 
+                     truncQ = 2, minLen = 50, rm.phix = TRUE, compress = TRUE, multithread = FALSE)  # on windows, set multithread = FALSE
+head(out)
+#You can mess with the MaxEE here if it is cutting too much of your data.
+
+
+#11 Figure out the error rates 
+#dada2 learns using a parametric error model with machine learning
+
+errF <- learnErrors(filtFs, multithread = TRUE)
+errR <- learnErrors(filtRs, multithread = TRUE)
+
+
+#Check if the error rates match the data fairly well - the black line is the model
+plotErrors(errF, nominalQ = TRUE)
+plotErrors(errR, nominalQ = TRUE)
+
+
+#12 De-replicate identical reads, and re-name these files the sample names
+
+#KH: So one of my files 166 ended up being a FALSE (a negative)
+#instead of changing filtering etc. above I'm doing a preliminary filtering 
+#here step to only use files that exist, which is below
+
+exists <- file.exists(filtFs)
+derepFs <- derepFastq(filtFs[exists], verbose=TRUE)
+derepRs <- derepFastq(filtRs[exists], verbose=TRUE)
+names(derepFs) <- sample.names[exists]
+names(derepRs) <- sample.names[exists]
+
+#The standard pipeline is here and doesn't include the filter. Use me first.
+
+derepFs <- derepFastq(filtFs, verbose = TRUE)
+derepRs <- derepFastq(filtRs, verbose = TRUE)
+names(derepFs) <- sample.names
+names(derepRs) <- sample.names
+
+
+# 13 Files are organized and sequences appropriately mashed together
+
+# Core sample inference algorithm is applied to de-replicated data
+dadaFs <- dada(derepFs, err = errF, multithread = TRUE)
+dadaRs <- dada(derepRs, err = errR, multithread = TRUE)
+
+# Paired reads are merged
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=TRUE)
+
+#Sequence table constructed
+seqtab2 <- makeSequenceTable(mergers)
+dim(seqtab2)
+
+#chimeras removed
+seqtab.nochim <- removeBimeraDenovo(seqtab2, method="consensus", multithread=TRUE, verbose=TRUE)
+
+#check the chimeras (etc.) by inspecting distribution of sequence lengths
+table(nchar(getSequences(seqtab.nochim)))
+
+
+#14 Track reads through the pipeline to make sure everything worked
+#there shouldn't be a step where most of the reads are removed
+
+getN <- function(x) sum(getUniques(x))
+out <- out[file.exists(filtFs),]  #this line i added bc the "out" was causing an error apparently due to the above filtering step
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace
+# sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", 
+                     "nonchim")
+rownames(track) <- sample.names[file.exists(filtFs)] #also added the exists here for same reason as above
+head(track)
+
+# find number of sequences per sample that passed through all filters
+{
+total_seq_after_chimera_removal_1_23_26 <-track[, c("input", "nonchim"), drop = FALSE]
+print(total_seq_after_chimera_removal_1_23_26)
+# save to .csv file
+output_file_path <- "C:/Users/harrivio/DADA2_Thesis/total_seq_after_chimera_removal_1_23_26.csv"
+write.csv(total_seq_after_chimera_removal_1_23_26, file = output_file_path, row.names = TRUE)
+}
+
+#15 Assign taxonomy using your downloaded UNITE file
+#VMH: I had to add some code to unzip the .tgz file.
+
+ref_tgz <- "C:/Users/harrivio/DADA2_Thesis/UNITE_sh_general_release_19.02.2025.tgz"
+ref_dir <- "C:/Users/harrivio/DADA2_Thesis/UNITE_19.02.2025"
+
+if (!dir.exists(ref_dir)) dir.create(ref_dir, recursive = TRUE)
+untar(ref_tgz, exdir = ref_dir)
+
+list.files(ref_dir, recursive = TRUE)
+
+unite.ref <- "C:/Users/harrivio/DADA2_Thesis/UNITE_19.02.2025/sh_general_release_dynamic_19.02.2025.fasta"
+taxa <- assignTaxonomy(seqtab.nochim, unite.ref, multithread = TRUE, tryRC = TRUE)
+
+taxa.print <- taxa
+rownames(taxa.print) <- NULL
+head(taxa.print)
+
+
+# 16 Export the data to a file to use in the future
+
+save.image(file='Violet_Dada2d_Taxonomy7o_1.23.26.RData')
+
+
+# solving error in unqs.mock below 
+# use line below to inspect row names to find mock community, replace for lane1-s173-index... below
+rownames(seqtab.nochim)
+
+#17 Check that dada2 worked by checking how many species show up in the mock community
+
+unqs.mock <- seqtab.nochim["lane1-s081-index--CGAGTAAT-GTAAGGAG-581",]
+#you have to put in the sample name of your mock community, check the data in
+#global environment and compare to illumina submission sheet for name
+unqs.mock <- sort(unqs.mock[unqs.mock>0], decreasing=TRUE) # Drop ASVs absent in the Mock
+cat("DADA2 inferred", length(unqs.mock), "sample sequences present in the Mock community.\n")
+
+#VMH: I think that the mock community did not get added prior to submission. So just running 
+#through the check with a random sample:
+unqs.test <- seqtab.nochim["lane1-s072-index--CCACTCCT-GGCTCTGA-572",]
+unqs.test <- sort(unqs.test[unqs.test>0], decreasing=TRUE)
+cat("DADA2 inferred", length(unqs.test), "sample sequences present in the test community.\n")
+
+############## Yay you finished DADA2!##########################################
+
+#Taking the data2 output object "seqtab.nochim" and making files
+
+
+#1. Defining objects and giving headers more manageable names w/ the "for" function
+#These are using the data from the seqtab.nochim file
+
+asv_seqs <- colnames(seqtab.nochim) #replace the column names
+asv_headers <- vector(dim(seqtab.nochim)[2], mode="character")
+
+for (i in 1:dim(seqtab.nochim)[2]) {
+  asv_headers[i] <- paste(">ASV", i, sep="_")
+}
+
+
+#2. Making files
+
+#A. Make and writing out a fasta of our final ASV seqs:
+asv_fasta <- c(rbind(asv_headers, asv_seqs))
+write(asv_fasta, "Violet_ASVs1_26_26.fa")
+
+#B. Make and write out a count table:
+asv_tab <- t(seqtab.nochim)
+row.names(asv_tab) <- sub(">", "", asv_headers)
+write.table(asv_tab, "Violet_ASVs_counts1_26_26.tsv", sep="\t", quote=F, col.names=NA)
+
+#C. Make and write out a taxonomy table :
+asv_tax <- taxa
+row.names(asv_tax) <- sub(">", "", asv_headers)
+write.table(asv_tax, "Violet_ASVs_taxonomy1_26_26.tsv", sep="\t", quote=F, col.names=NA)
+
+
+###### Those files are now written out and could be used in PCORD etc. However,
+#more clean up can be done here.#####
+
+# install phyloseq
+BiocManager::install("phyloseq")
+
+#instal the development version of phyloseq from github because the old version
+# is not compatable with this version of R
+install.packages("remotes")
+remotes::install_github("joey711/phyloseq", ref="devel")
+
+# load packages
+library(phyloseq)
+library(readxl)
+library(dplyr)
+library(plyr)
+library(stringr)
+
+
+#1. Import files for phyloseq 
+
+# Import the ones you just made above
+test_otu<-read.table(file = "C:/Users/harrivio/DADA2_Thesis/Violet_ASVs_counts1_26_26.tsv", sep = "\t", header = TRUE, row.names=1)
+OTU = otu_table(test_otu, taxa_are_rows = TRUE)
+taxonomy<-read.table(file = "C:/Users/harrivio/DADA2_Thesis/Violet_ASVs_taxonomy1_26_26.tsv", sep = "\t", header = TRUE, row.names=1)
+TAX = tax_table(as.matrix(taxonomy))
+
+# Import your testing matrix (metadata) file with samples/locations/etc.
+metadata <- read_excel(
+  "C:/Users/harrivio/DADA2_Thesis/CQLS_sub_sheet_Violet_.xlsx",
+  sheet = 1
+)
+metadata<-as.data.frame(metadata)
+
+#check for NA, blank cells, duplicates
+metadata[, 1]   # look at the values
+metadata <- metadata[!is.na(metadata[,1]), ]   #remove rows with missing sample names
+anyDuplicated(metadata[,1])               #check for duplicates
+rownames(metadata) <- metadata[, 2]       # column A as rownames
+metadata <- metadata[, 1:2]               # only keeping important columns from metadata sheet
+# rename metadata column to avoid spaces
+colnames(metadata) <- c("Plot", "Primer")
+
+# rename otu sample names to match metadata
+# Extract the trailing number from OTU sample names
+colnames(OTU) <- str_extract(colnames(OTU), "\\d+$")  # grab digits at end
+# check the match, if empty then names match
+setdiff(colnames(OTU), rownames(metadata))  # should return character(0)
+
+# convert metadata to phyloseq object
+meta<-sample_data(metadata)
+
+#2. Make a PhyloSeq Object!!!
+# check sample names 
+# Sample names in OTU table
+sample_names(OTU)
+# Sample names in metadata
+sample_names(meta)
+
+phyob<-phyloseq(OTU, TAX, meta)
+
+
+#3. Clean up the data some
+# Remove the ASVs that occur less than a certain amount of times (singletons etc.)
+condition <- function(x) { sum(x > 0) >= 1 }
+taxaToKeep <- filter_taxa(phyob, condition)
+filtered_phyob<- prune_taxa(taxaToKeep, phyob)
+
+
+#Here we "melt" the phyloseq object into all combinations of metadata and 
+#compress by similar species so all S. brinkmannii ASVs are one
+Ca_melt<-psmelt(filtered_phyob)
+# Summarize abundance by sample + metadata + taxonomy
+Ca_melt_dply <- ddply(
+  Ca_melt,
+  .(Plot, Primer, Phylum, Class, Order, Family, Genus, Species),
+  summarise,
+  total = sum(Abundance)
+)
+
+#remove rows where the species is not present in a sample
+Ca_melt_dply <- Ca_melt_dply[Ca_melt_dply$total > 0, ]
+
+
+#order by sample #VMH: I am using the primer assignments here only becuase my sample IDs are not purely numeric.
+Ca_melt_dply$Primer <- as.numeric(as.character(Ca_melt_dply$Primer))
+Ca_melt_dply <- Ca_melt_dply[order(Ca_melt_dply$Primer), ]
+
+
+write.csv(Ca_melt_dply, "C:/Users/harrivio/DADA2_Thesis/VioletMelted1.26.26.csv", row.names = FALSE)
+
