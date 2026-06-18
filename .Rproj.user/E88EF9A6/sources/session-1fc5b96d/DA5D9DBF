@@ -1,27 +1,27 @@
 {
-    "id": "6CB531C5",
-    "path": "C:/Users/harrivio/GitHub/lionshead_code/01.dada2.R",
-    "project_path": "01.dada2.R",
+    "id": "DA5D9DBF",
+    "path": "C:/Users/harrivio/GitHub/lionshead_code/02.rarefaction.R",
+    "project_path": "02.rarefaction.R",
     "type": "r_source",
     "hash": "0",
     "contents": "",
     "dirty": false,
-    "created": 1781558090276.0,
+    "created": 1781818435473.0,
     "source_on_save": false,
-    "relative_order": 1,
+    "relative_order": 3,
     "properties": {
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "285,19",
-        "scrollLine": "264"
+        "cursorPosition": "14,14",
+        "scrollLine": "5"
     },
     "folds": "",
-    "lastKnownWriteTime": 1781818331,
+    "lastKnownWriteTime": 1781819820,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1781818331296,
+    "last_content_update": 1781819820113,
     "read_only": false,
     "read_only_alternatives": []
 }

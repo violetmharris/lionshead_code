@@ -1,0 +1,180 @@
+###------------Violet Harris 4.17.26 OSU----------###
+
+##Code to run ASV&taxonomy data table through rarefaction.
+#this is post-DADA2 data preprocessing.
+#helpful reference for this is a tutorial here: https://labolazar.github.io/amplicon_data_analysis/rarefaction.html#complete-code-1
+#also referencing Abbey Neat's code, here: https://github.com/aneat/hja_fungi_manuscript/blob/main/code/06b.rarefaction_soil.R
+
+
+
+##Load packages
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+library(here)
+library(tidyverse)
+library(ggpubr)
+library(RColorBrewer)
+library(tibble)
+library(dplyr)
+
+###check project root directory:
+dr_here()
+
+
+##Load data -- I have a merged ASV & taxonomy table
+merged <- read.csv(here("Violet_merged_asv_taxonomy.csv"), row.names = 1, check.names = FALSE)
+meta <- read.csv(here("metadata_thesis.csv"), row.names = 1) 
+
+
+
+
+##---- Data formatting ----##
+
+##Split into ASV counts and taxonomy
+# Define taxonomy columns 
+tax_cols <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species") 
+
+# Split the data 
+asv <- merged[, !colnames(merged) %in% tax_cols] 
+tax <- merged[, tax_cols] 
+
+# Convert to matrices 
+asv <- as.matrix(asv) 
+tax <- as.matrix(tax)
+
+#Make sure row & column names match
+all(rownames(meta) %in% colnames(asv))
+colnames(asv)
+rownames(meta)
+rownames(meta) <- gsub("-", ".", rownames(meta))
+
+##create phyloseq object
+ASV <- otu_table(asv, taxa_are_rows = TRUE) 
+TAX <- tax_table(tax) 
+META <- sample_data(meta)
+ps <- phyloseq(ASV, TAX, META)
+
+
+###-----Group at genus level------###
+#skip this step if analysing at finer taxonomic scale.
+ps_genus <- tax_glom(ps, taxrank = "Genus")
+
+
+
+
+####-----------This is where rarefaction starts-----------#####
+#inspect sequencing depth to decide on rarefaction depth
+sample_sums(ps_genus)
+max(sample_sums(ps_genus)) # 
+
+#plot distribution of sample depths
+df <- data.frame( 
+  Sample = names(sample_sums(ps_genus)), 
+  Reads = sample_sums(ps_genus) ) 
+
+ggplot(df, aes(x = Reads)) + geom_histogram(bins = 30) + theme_minimal()
+
+#this gives which samples fall below a read count threshold (i.e. would be thrown out)
+threshold <- 2480 #test out different thresholds here
+low_depth_samples <- sample_sums(ps_genus)[sample_sums(ps_genus) < threshold] 
+low_depth_samples
+
+#choose rarefaction depth
+depth <- 2480
+
+
+
+##create function to rarefy ASV table to chosen threshold & create table of each sample, ASV,
+#and abundance after one rarefy iteration
+rarefy_once <- function(ps_genus,
+                             depth,
+                             iteration_id = 1,
+                             replace = FALSE,
+                             rngseed = FALSE) {
+  
+  ps_rar <- rarefy_even_depth(
+    ps_genus,
+    sample.size = depth,
+    replace = replace,
+    rngseed = rngseed,
+    verbose = FALSE
+  )
+  
+  long_df <- phyloseq::psmelt(ps_rar) %>%
+    dplyr::select(
+      SampleID = Sample,
+      Feature  = OTU,
+      Abundance
+    ) %>%
+    dplyr::mutate(iteration = iteration_id)
+  
+  return(long_df)
+}
+
+
+#test function with one iteration
+test_once <- rarefy_once(
+  ps_genus      = ps_genus,
+  depth         = depth,
+  iteration_id  = 1
+)
+head(test_once)
+
+#make sure it rarefied to the depth chosen
+test_once %>%
+  group_by(SampleID) %>%
+  summarise(
+    total_reads = sum(Abundance),
+    .groups = "drop"
+  )
+
+
+
+##run 1000 rarefaction function iterations
+set.seed(123)
+
+n_iter <- 1000
+
+rarefied_table <- bind_rows(
+  lapply(seq_len(n_iter), function(i) {
+    rarefy_once(
+      ps_genus = ps_genus,
+      depth = depth,
+      iteration_id = i
+    )
+  })
+)
+
+##create table with mean values for each sample, genus, abundance combination
+mean_abundance_table <- rarefied_table %>%
+  group_by(SampleID, Feature) %>%
+  summarise(
+    mean_abundance = mean(Abundance),
+    sd_abundance   = sd(Abundance),
+    .groups = "drop"
+  )
+
+#reformat table to a genus x sample matrix
+mean_abundance_wide <- mean_abundance_table %>%
+  select(SampleID, Feature, mean_abundance) %>%
+  tidyr::pivot_wider(
+    names_from  = SampleID,
+    values_from = mean_abundance,
+    values_fill = 0
+  )
+abundance_post_rarefaction <- mean_abundance_wide %>%
+  column_to_rownames("Feature")
+
+#plot rarefaction curve
+
+
+
+#####save rarefied data#####
+saveRDS(abundance_post_rarefaction, file = here("rarefied_iterative_Genus_meanAbundance"))
+
+
+##END##
+
+
+
