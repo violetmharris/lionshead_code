@@ -1,7 +1,7 @@
 #
 #--------Lionshead soil fungi manuscript-----#
 # Violet Harris / OSU / Kiser Lab / 2026
-# 6.15.26
+# 6.18.26
 
 # This code rarefies the data post-DADA2.
 

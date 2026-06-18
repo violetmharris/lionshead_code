@@ -3,7 +3,7 @@
     "path": "C:/Users/harrivio/GitHub/lionshead_code/02.rarefaction.R",
     "project_path": "02.rarefaction.R",
     "type": "r_source",
-    "hash": "0",
+    "hash": "760251085",
     "contents": "",
     "dirty": false,
     "created": 1781818435473.0,
@@ -13,15 +13,15 @@
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "14,14",
-        "scrollLine": "5"
+        "cursorPosition": "28,0",
+        "scrollLine": "6"
     },
     "folds": "",
-    "lastKnownWriteTime": 1781819820,
+    "lastKnownWriteTime": 1781820856,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1781819820113,
+    "last_content_update": 1781820856974,
     "read_only": false,
     "read_only_alternatives": []
 }
