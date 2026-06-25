@@ -1,0 +1,26 @@
+{
+    "id": "FF3C1E21",
+    "path": "C:/Users/harrivio/GitHub/lionshead_code/Rfiles/02.rarefaction.R",
+    "project_path": "Rfiles/02.rarefaction.R",
+    "type": "r_source",
+    "hash": "233616677",
+    "contents": "",
+    "dirty": false,
+    "created": 1782421291743.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "44,57",
+        "scrollLine": "31"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1782424240,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1782424240768,
+    "read_only": false,
+    "read_only_alternatives": []
+}
