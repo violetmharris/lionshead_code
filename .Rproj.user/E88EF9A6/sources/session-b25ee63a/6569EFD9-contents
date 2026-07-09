@@ -1,0 +1,116 @@
+###------------Violet Harris 5.5.26 OSU----------###
+#Code trying out use of PERMANOVA instead of MRPP.
+#This is post rarefaction and taxa and guild assignment.
+
+
+###----------PREP STUFF-------#####
+#Load libraries
+library(here)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(phyloseq)
+library(tidyverse)
+library(vegan)
+library(readxl)
+
+
+###check project root directory:
+dr_here()
+
+####load data
+data <- readRDS(here("PC_phyloseq_object_iterative.rds"))
+meta <- readxl::read_xlsx(here("metadata_thesis_4.xlsx")) #this metadata has slope, aspect, elevation data
+
+####fix formatting
+otu_mtx <- as.data.frame(t(otu_table(data)@.Data))
+
+dim(otu_mtx)
+head(otu_mtx[,1:5])
+
+head(meta) #need to make names match between meta and otu
+
+meta$Sample_ps <- meta$Sample |>
+  gsub("--", "..", x = _) |>
+  gsub("-", ".", x = _)
+
+head(meta$Sample_ps)
+
+#set rownames
+meta_df <- as.data.frame(meta)
+rownames(meta_df) <- meta_df$Sample_ps
+
+#subset to shared samples only (remove Ts from meta)
+shared_samples <- intersect(rownames(otu_mtx), rownames(meta_df))
+
+otu_df <- otu_mtx[shared_samples, ]
+meta_df_sub <- meta_df[shared_samples, ]
+
+##Check formatting -- should return true
+all(rownames(otu_df) == rownames(meta_df_sub))
+
+
+
+
+
+##------PERMANOVA-----------##
+#SBS only 
+adonis2(
+  otu_df ~ SBS,
+  data = meta_df_sub,
+  method = "bray",
+  permutations = 999
+)
+
+
+#Elevation only
+adonis2(
+  otu_df ~ Elev_ft,
+  data = meta_df_sub,
+  method = "bray",
+  permutations = 999
+)
+
+#Slope only
+adonis2(
+  otu_df ~ SlopeDeg,
+  data = meta_df_sub,
+  method = "bray",
+  by = "margin",
+  permutations = 999
+)
+
+
+#Larger model
+full <- adonis2(
+  otu_df ~ SBS + Elev_ft + SlopeDeg + SBS:Elev_ft + SBS:SlopeDeg + 
+    Elev_ft:SlopeDeg,
+  data = meta_df_sub,
+  method = "bray",
+  by = "terms",
+  permutations = 999
+)
+
+#only additive terms
+adonis2(
+  otu_df ~ SBS + Elev_ft + SlopeDeg,
+  data = meta_df_sub,
+  method = "bray",
+  by = "margin",
+  permutations = 999
+) #slope still not significant
+
+
+#only significant terms
+a <-adonis2(
+  otu_df ~ SBS + Elev_ft,
+  data = meta_df_sub,
+  method = "bray",
+  by = "margin",
+  permutations = 999
+)
+a
+##this last model is significant with both "terms" and "margin" SS, but "margin" is a more conservative choice.
+
+write.csv(full, here("outputs/fullmodelPERMANOVA.csv"))
+write.csv(a, here("outputs/finalPERMANOVA.csv"))

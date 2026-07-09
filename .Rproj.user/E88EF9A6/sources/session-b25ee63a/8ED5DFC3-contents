@@ -1,0 +1,51 @@
+#From Katie's Code:Merging ASV abundance and Taxonomy files 11/9/2025
+#VMH 2.4.26
+
+# Load package
+library(tidyverse)
+
+# Read ASV count table
+#asv_table <- read.table("T:/Groups/Preservation/Katie/KatieChrisTaxonomyTables/KatieChris_ASVs3_4_25.tsv", header = TRUE, sep = "\t", row.names = 1)
+asv_table <- read.table("C:/Users/harrivio/DADA2_Thesis/Violet_ASVs_counts1_26_26.tsv", header = TRUE, sep = "\t", row.names = 1)
+
+# Read taxonomy table
+#taxonomy <- read.table("T:/Groups/Preservation/Katie/KatieChrisTaxonomyTables/KatieChris_ASVs_taxonomy3_4_25.tsv", header = TRUE, sep = "\t", row.names = 1)
+taxonomy <- read.table("C:/Users/harrivio/DADA2_Thesis/Violet_ASVs_taxonomy1_26_26.tsv", header = TRUE, sep = "\t", row.names = 1)
+  
+# Move row names into an "ASV" column for both data frames
+asv_table <- asv_table %>% rownames_to_column("ASV")
+taxonomy <- taxonomy %>% rownames_to_column("ASV")
+
+#Merge by ASV ID
+# Makes one table with counts per sample and taxonomy columns
+merged <- left_join(asv_table, taxonomy, by = "ASV")
+
+# Check result
+head(merged)
+
+
+
+# # Summarize by Taxonomic Level 
+# 
+# # To sum read counts by genus:
+ genus_summary <- merged %>%
+   group_by(Genus) %>%
+   summarise(across(where(is.numeric), sum))
+#   
+ head(genus_summary)
+ 
+ 
+# # If want to calculate relative abundance:
+ genus_rel_abund <- genus_summary %>%
+   mutate(across(-Genus, ~ .x / sum(.x)))
+
+head(genus_rel_abund)
+
+
+# Save merged file
+write.table(merged, "C:/Users/harrivio/DADA2_Thesis/Violet_merged_asv_taxonomy.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
+write.csv(merged, "C:/Users/harrivio/DADA2_Thesis/Violet_merged_asv_taxonomy.csv", row.names = FALSE)
+
+write.table(genus_summary, "C:/Users/harrivio/DADA2_Thesis/Violet_mergedGenus_asv_taxonomy.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
+
+write.table(genus_rel_abund, "C:/Users/harrivio/DADA2_Thesis/Violet_mergedGenusRelAb_asv_taxonomy.tsv", sep = "\t", quote = FALSE, row.names = FALSE)

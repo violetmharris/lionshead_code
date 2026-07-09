@@ -1,24 +1,24 @@
 {
-    "id": "832401AE",
-    "path": "C:/Users/harrivio/GitHub/lionshead_code/Rfiles/01.dada2.R",
-    "project_path": "Rfiles/01.dada2.R",
+    "id": "0F387C01",
+    "path": "C:/Users/harrivio/DataAnalysisThesis/Rfiles/08.Multigroup_ISA.R",
+    "project_path": null,
     "type": "r_source",
-    "hash": "2240813425",
+    "hash": "0",
     "contents": "",
     "dirty": false,
-    "created": 1782422564132.0,
+    "created": 1783638403703.0,
     "source_on_save": false,
-    "relative_order": 6,
+    "relative_order": 5,
     "properties": {
         "source_window_id": "",
         "Source": "Source"
     },
     "folds": "",
-    "lastKnownWriteTime": 1781821273,
+    "lastKnownWriteTime": 1777068948,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1781821273,
+    "last_content_update": 1777068948,
     "read_only": false,
     "read_only_alternatives": []
 }

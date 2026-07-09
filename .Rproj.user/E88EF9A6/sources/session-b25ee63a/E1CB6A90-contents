@@ -1,0 +1,156 @@
+###------------Violet Harris 4.9.26 OSU----------###
+#Code to run MRPP AT THE GUILD LEVEL for my thesis data
+#This is post rarefaction and taxa and guild assignment.
+#PC samples only. 
+
+###----Prep------###
+#load libraries
+library(here)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(phyloseq)
+library(tidyverse)
+library(vegan)
+
+###check project root directory:
+dr_here()
+
+#load data
+####load data
+data <- readRDS(here("PC_phyloseq_object_iterative.rds"))
+guilds <- read.csv(here("rarefied_iterative_primary_GuildTaxa1.csv"))
+
+#merge guild info into tax table
+
+tax <- as.data.frame(tax_table(data))
+
+tax <- tax %>% select(-ASV)
+
+guilds_sub <- guilds %>%
+  select(ASV, PrimaryGuild)
+
+#fix formatting junk
+tax2 <- tax %>%
+  tibble::rownames_to_column("ASV") %>%
+  left_join(guilds_sub, by = "ASV") %>%
+  tibble::column_to_rownames("ASV")
+
+tax2 <- tax2 %>%
+  select(-PrimaryGuild.x) %>%           
+  rename(PrimaryGuild = PrimaryGuild.y)
+
+
+tax_table(data) <- tax_table(as.matrix(tax2))
+
+#check that primary guilds are present
+colnames(tax_table(data))
+tax_table(data)[1:6, "PrimaryGuild"]
+
+#phyloseq object
+ps_guild <- tax_glom(
+  data,
+  taxrank = "PrimaryGuild",
+  NArm = TRUE
+)
+
+
+
+####MRPP####
+
+comm <- as(otu_table(ps_guild), "matrix")
+
+if (!taxa_are_rows(ps_guild)) {
+  comm <- t(comm)
+}
+
+groupsAll <- sample_data(ps_guild)$SBS
+
+
+
+mrpp_all <- mrpp(
+  dat      = comm,
+  grouping = groupsAll,
+  distance = "bray"
+)
+
+mrpp_all
+
+mrpp_df <- data.frame(
+  delta_obs = mrpp_all$delta,
+  delta_exp = mrpp_all$E.delta,
+  A         = mrpp_all$A,
+  p_value   = mrpp_all$Pvalue,
+  n_perm    = mrpp_all$permutations
+)
+
+write.csv(
+  mrpp_df,
+  here("outputs/mrpp_SBS_guild.csv"),
+  row.names = FALSE
+)
+
+
+
+
+
+###now pairwise####
+
+
+# ensure samples are rows
+if (!taxa_are_rows(ps_guild)) {
+  comm <- t(comm)
+}
+
+groups <- sample_data(ps_guild)$SBS
+groups <- factor(groups)
+
+##run MRPP
+bs_levels <- levels(groups)
+
+pairwise_mrpp <- combn(levels(groups), 2, simplify = FALSE, function(pair) {
+  
+  keep <- groups %in% pair
+  
+  sub_comm   <- comm[keep, , drop = FALSE]
+  sub_groups <- droplevels(groups[keep])
+  
+  # drop empty samples 
+  nonzero <- rowSums(sub_comm) > 0
+  sub_comm   <- sub_comm[nonzero, , drop = FALSE]
+  sub_groups <- sub_groups[nonzero]
+  if (length(unique(sub_groups)) < 2) {
+    return(NULL)
+  }
+  
+  mr <- mrpp(
+    dat      = sub_comm,
+    grouping = sub_groups,
+    distance = "bray"
+  )
+  
+  data.frame(
+    group1    = pair[1],
+    group2    = pair[2],
+    delta_obs = mr$delta,
+    delta_exp = mr$E.delta,
+    A         = mr$A,
+    p_value   = mr$Pvalue,
+    n_perm    = mr$permutations
+  )
+})
+
+pairwise_mrpp_df <- do.call(rbind, pairwise_mrpp)
+
+##BH correction
+pairwise_mrpp_df$p_adj_BH <- p.adjust(
+  pairwise_mrpp_df$p_value,
+  method = "BH"
+)
+
+
+write.csv(
+  pairwise_mrpp_df,
+  here("outputs/mrpp_pairwise_SBS_guild.csv"),
+  row.names = FALSE
+)

@@ -1,0 +1,222 @@
+###------------Violet Harris 4.17.26 OSU----------###
+
+#Annotate taxa with their functional guilds from FUNGuild.
+#this is post-rarefaction.
+
+#reference materials: 
+#FUNGuild -- https://search.r-project.org/CRAN/refmans/MiscMetabar/html/funguild_assign.html
+
+
+##Load packages
+# install.packages("janitor")
+# install.packages("ggpubr")
+# install.packages("remotes")
+# remotes::install_github("brendanf/FUNGuildR")
+# install.packages("splitstackshape")
+
+library(ggplot2)
+library(vegan)
+library(dplyr)
+library(scales)
+library(grid)
+library(reshape2)
+library(phyloseq)
+library(janitor)
+library(tidyverse)
+library(ggpubr)
+library(ape)
+library(FUNGuildR)
+library(splitstackshape)
+library(here)
+library(stringr)
+
+###check project root directory:
+dr_here()
+
+##Load data
+ps_rarefied <- readRDS(here("rarefied_iterative_Genus_meanAbundance"))
+
+full_taxa <- read.csv(here("Violet_merged_asv_taxonomy.csv"), row.names = 1, check.names = FALSE)
+head(full_taxa)
+
+
+
+##subset taxa table to post-rarefaction taxa
+#check formatting
+all(rownames(ps_rarefied) %in% rownames(full_taxa)) #should be TRUE
+
+
+Rtaxa <- full_taxa[
+  rownames(ps_rarefied),
+  ,
+  drop = FALSE]
+
+#check it worked:
+identical(
+  rownames(ps_rarefied),
+  rownames(Rtaxa)) #should be TRUE
+head(Rtaxa)
+
+
+###------Fixes formatting issues that FUNGuild would run in to:----##
+# Vector of the rank columns. I'm removing species since I'm analyzing the data at genus level
+rank_cols <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
+
+# Clean NAs, make sure they are character rather than factor
+Rtaxa[rank_cols] <- lapply(Rtaxa[rank_cols], function(x) {
+  x <- as.character(x)
+  x[x %in% c("<NA>", "NA", "")] <- NA
+  x
+})
+
+
+# Replace NA with "" so paste won't insert "NA"
+Rtaxa[rank_cols] <- lapply(Rtaxa[rank_cols], \(x) ifelse(is.na(x), "", x))
+
+# Collapse multiple delimiters and trim trailing delimiters
+collapse_taxonomy <- function(row_vals) {
+  s <- paste(row_vals, collapse = ";")
+  s <- gsub(";{2,}", ";", s)
+  s <- sub("^;+","", s)
+  s <- sub(";+$","", s)
+  s
+}
+
+Rtaxa$Taxonomy <- apply(Rtaxa[, rank_cols, drop = FALSE], 1, collapse_taxonomy)
+
+# Check that it worked:
+head(Rtaxa)
+
+#drop all columns except taxonomy to be sure we don't accidentally use old count data:
+count_cols <- grep("^lane1\\.", colnames(Rtaxa), value = TRUE)
+tax_only <- Rtaxa[, !colnames(Rtaxa) %in% count_cols]
+
+head(tax_only)
+colnames(tax_only)
+
+tax_only$ASV <- rownames(tax_only)
+
+
+#--------------FUNGuild--------------#
+#input FUNGuild database
+fung <- get_funguild_db()
+
+GuildTaxa <- funguild_assign(
+  tax_only,
+  tax_col = "Taxonomy"
+)
+
+head(GuildTaxa)
+
+
+rownames(GuildTaxa) <- GuildTaxa$ASV
+
+
+###------Simplify from multiple guild assignments-----###
+
+##filter by confidence -- keep only probably and highly probable assignments:
+funguild_filtered <- GuildTaxa %>%
+  dplyr::filter(confidenceRanking %in% c("Highly Probable", "Probable"))
+head(funguild_filtered)
+
+
+
+##function to simplify to primary guild:
+get_primary_guild <- function(x) {
+  
+  # Missing or empty
+  if (is.na(x) || x == "") {
+    return(NA_character_)
+  }
+  
+  # Primary guild marked with |
+  if (str_detect(x, "\\|")) {
+    return(str_extract(x, "(?<=\\|)[^|]+(?=\\|)"))
+  }
+  
+  # Single guild (no delimiters)
+  if (!str_detect(x, "-")) {
+    return(x)
+  }
+  
+  # Multiple guilds without | → randomly choose one
+  guilds <- str_split(x, "-", simplify = TRUE)
+  return(sample(guilds, 1))
+}
+
+#apply function
+set.seed(123) 
+
+#tracks how primary guild was assigned
+funguild_primary <- funguild_filtered %>%
+  mutate(
+    GuildSelection = case_when(
+      is.na(guild) | guild == "" ~ "missing",
+      str_detect(guild, "\\|") ~ "explicit_primary",
+      !str_detect(guild, "-") ~ "single",
+      TRUE ~ "random_choice"
+    ),
+    PrimaryGuild = vapply(guild, get_primary_guild, character(1))
+  )
+
+
+table(funguild_primary$GuildSelection)
+head(funguild_primary)
+
+##save
+write.csv(funguild_primary, file = here("rarefied_iterative_primary_GuildTaxa1.csv"), row.names = TRUE)
+
+
+
+
+####phyloseq object
+asv <- ps_rarefied
+tax <- funguild_primary
+meta <- read.csv(here("metadata_thesis.csv"), row.names = 1) 
+
+head(asv)
+head(tax)
+head(meta)
+
+
+# Convert to matrices 
+asv <- as.matrix(asv) 
+tax <- as.matrix(tax)
+
+#fix rownames mismatch
+rownames(meta) <- gsub("-", ".", rownames(meta))
+
+#remove sample from meta that was dropped in rarefaction
+meta <- meta[colnames(asv), , drop = FALSE]
+
+#confirm formatting matches
+all(colnames(asv) %in% rownames(meta))
+all(rownames(meta) %in% colnames(asv))
+
+
+rownames(tax)
+head(tax)
+head(asv)
+
+##create phyloseq object
+ASV <- otu_table(asv, taxa_are_rows = TRUE) 
+TAX <- tax_table(tax) 
+META <- sample_data(meta)
+ps <- phyloseq(ASV, TAX, META)
+
+
+##checks
+ps
+taxa_names(ps)[1:5]
+sample_names(ps)[1:5]
+
+#remove finer than genus level
+ps_genus <- tax_glom(ps, taxrank = "Genus")
+
+##save
+saveRDS(ps_genus, file = here("iterative_ASV_rarefied_Guilds_4.21"))
+
+##END##
+
+
+

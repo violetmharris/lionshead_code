@@ -1,0 +1,147 @@
+#-------Multigroup ISA for thesis data VMH 4.23.26------#
+
+##load packages
+library(indicspecies)
+library(here)
+library(phyloseq)
+library(dplyr)
+
+
+##Load data
+ps_P <- readRDS(here("PC_phyloseq_object_iterative.rds"))
+guildtax <- read.csv(here("rarefied_iterative_primary_GuildTaxa1.csv"))
+
+
+##Correct formatting
+#extract otu/asv table
+otu <- as.data.frame(t(otu_table(ps_P)))
+
+#extract grouping vector for cluster argument
+groups <- sample_data(ps_P)$SBS
+
+#check names match:
+all(rownames(otu) == rownames(sample_data(ps_P)))
+
+#remove genera with zero abundance 
+otu <- otu[, colSums(otu) > 0]
+
+
+#-------Multigroup ISA---------#
+set.seed = 123
+
+isa_multigroup <- multipatt(
+  x = otu,
+  cluster = groups,
+  func = "IndVal.g",
+  duleg = FALSE,
+  max.order = 4,
+  control = how(nperm = 999)
+)
+summary(isa_multigroup, indvalcomp = TRUE)
+
+isa_multigroup <- as.data.frame(isa_multigroup$sign)
+#write.csv(isa_multigroup, here("outputs/isa_multigroup.csv"), row.names = TRUE)
+
+
+
+multgroup_df <- isa_multigroup
+
+multgroup_df$ASV <- rownames(multgroup_df)
+
+#------taxonomy and guilds------#
+#merge 
+merged_df <- merge(multgroup_df, guildtax, by = "ASV")
+head(merged_df)
+
+#remove columns that are just NAs
+merged_clean <- merged_df[, colSums(!is.na(merged_df)) > 0]
+names(merged_clean)
+
+
+#reformat
+
+#remove columns don't want 
+merged_pub <- subset(
+  merged_df,
+  select = -c(Kingdom, Phylum, Class, Order, Family, Taxonomy, taxon, guid, mbNumber, 
+              taxonomicLevel, trophicMode, guild, confidenceRanking, growthForm, trait, notes, citationSource,
+              GuildSelection))
+
+#reorder columns
+merged_df <- merged_df[, c(
+  "Genus", "s.Un", "s.Low", "s.Mod", "s.High",
+  "index", "stat", "p.value", "PrimaryGuild"
+)]
+
+#collapse group columns into 1
+
+merged_df <- merged_df %>%
+  rowwise() %>%
+  mutate(
+    SBS = c(
+      if (s.Low  == 1) "Low"  else NULL,
+      if (s.Mod  == 1) "Mod"  else NULL,
+      if (s.High == 1) "High" else NULL,
+      if (s.Un   == 1) "Un"   else NULL
+    ) |>
+      paste(collapse = "/")
+  ) %>%
+  ungroup() %>%
+  mutate(
+    SBS = ifelse(SBS == "Low/Mod/High/Un", "All", SBS)
+  )
+
+
+#remove funky genus prefixes
+cols <- c("Genus")
+
+for (col in cols) {
+  merged_df[[col]] <- sub("^[g]__", "", merged_df[[col]])
+}
+
+
+#remove unneeded columns again:
+merged_df <- subset(merged_df, select = -c(s.Un, s.Low, s.Mod, s.High))
+
+merged_df <- merged_df[, c(
+  "Genus", "SBS",
+  "stat", "p.value", "PrimaryGuild"
+)]
+head(merged_df)
+
+#rename columns
+merged_df <- merged_df %>%
+  rename(
+    IV  = stat,
+    "p value" = p.value,
+    Guild = PrimaryGuild
+  )
+merged_df <- merged_df %>%
+  rename(
+    'p value' = `p value`,
+  )
+merged_df$IV <- round(merged_df$IV, 2)
+head(merged_df)
+
+##full table
+write.csv(merged_df, here("outputs/isa_multigroup_pub_FULL.csv"), row.names = FALSE)
+
+
+
+####Only statistically significant results:
+
+sig_mult <- merged_df[merged_df$`p value` < 0.05, ]
+
+#sort by IV strength
+sig_mult <- sig_mult[order(-sig_mult$IV), ]
+head(sig_mult)
+
+write.csv(
+  sig_mult,
+  here("outputs/ISA_multigroup_pub_significant_only.csv"),
+  row.names = FALSE
+)
+
+####END####
+
+
