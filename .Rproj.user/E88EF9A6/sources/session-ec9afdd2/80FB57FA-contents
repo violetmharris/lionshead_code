@@ -62,7 +62,6 @@ ps_genus <- tax_glom(ps, taxrank = "Genus")
 
 
 
-
 ####-----------This is where rarefaction starts-----------#####
 #inspect sequencing depth to decide on rarefaction depth
 sample_sums(ps_genus)
@@ -166,7 +165,6 @@ mean_abundance_wide <- mean_abundance_table %>%
 abundance_post_rarefaction <- mean_abundance_wide %>%
   column_to_rownames("Feature")
 
-#plot rarefaction curve
 
 
 
